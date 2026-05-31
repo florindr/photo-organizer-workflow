@@ -14,9 +14,22 @@ public static class JunkClassifier
 
     private static readonly HashSet<string> KnownMediaExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".jpg", ".jpeg", ".png", ".heic", ".heif", ".dng", ".raw",
-        ".bmp", ".webp", ".tiff", ".tif", ".gif",
-        ".mp4", ".mov", ".avi", ".mkv", ".3gp", ".m4v", ".wmv"
+        // Common photos
+        ".jpg", ".jpeg", ".png", ".heic", ".heif", ".bmp", ".webp", ".tiff", ".tif", ".gif",
+        // RAW formats (Canon, Sony, Nikon, Olympus, Fuji, Panasonic, Pentax, Samsung, Sigma)
+        ".dng", ".raw", ".cr2", ".cr3", ".arw", ".nef", ".nrw", ".orf", ".raf",
+        ".rw2", ".pef", ".srw", ".x3f", ".erf",
+        // Video
+        ".mp4", ".mov", ".avi", ".mkv", ".3gp", ".m4v", ".wmv", ".mts", ".m2ts", ".ts"
+    };
+
+    // These extensions always come from dedicated cameras/camcorders and are never junk,
+    // even when no embedded date is detected (MetadataExtractor has limited RAW support).
+    private static readonly HashSet<string> AlwaysLegitimateExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".cr2", ".cr3", ".arw", ".nef", ".nrw", ".orf", ".raf",
+        ".rw2", ".pef", ".srw", ".x3f", ".erf", ".dng", ".raw",
+        ".mts", ".m2ts"
     };
 
     public static bool IsJunk(FileInfo file, DateSource dateSource)
@@ -37,7 +50,12 @@ public static class JunkClassifier
         if (!KnownMediaExtensions.Contains(file.Extension))
             return true;
 
-        // Only a filesystem date means no real capture metadata — treat as suspected junk
+        // Camera RAW and specialised camcorder formats are always legitimate,
+        // even when MetadataExtractor can't extract a date from them.
+        if (AlwaysLegitimateExtensions.Contains(file.Extension))
+            return false;
+
+        // For everything else, only a filesystem date means no real capture metadata.
         if (dateSource == DateSource.FileSystem)
             return true;
 

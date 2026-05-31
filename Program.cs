@@ -98,6 +98,51 @@ syncCmd.SetAction(result =>
 
 rootCmd.Add(syncCmd);
 
+// ── quarantine subcommand ─────────────────────────────────────────────────────
+
+var quarantineSourceArg = new Argument<DirectoryInfo>("source")
+{
+    Description = "Organized destination folder to scan for junk"
+};
+var quarantineDirArg = new Argument<DirectoryInfo>("quarantine-dir")
+{
+    Description = "Folder to move suspected junk into (preserves subfolder structure)"
+};
+var quarantineDryRunOpt = new Option<bool>("--dry-run", "-n")
+{
+    Description = "Preview suspected junk without moving anything"
+};
+var quarantineFromYearOpt = new Option<int>("--from-year")
+{
+    Description = "Only scan year folders >= this value",
+    DefaultValueFactory = _ => 1900
+};
+var quarantineToYearOpt = new Option<int>("--to-year")
+{
+    Description = "Only scan year folders <= this value",
+    DefaultValueFactory = _ => 9999
+};
+
+var quarantineCmd = new Command("quarantine", "Find suspected junk inside an organized folder and move it to a quarantine directory for inspection");
+quarantineCmd.Add(quarantineSourceArg);
+quarantineCmd.Add(quarantineDirArg);
+quarantineCmd.Add(quarantineDryRunOpt);
+quarantineCmd.Add(quarantineFromYearOpt);
+quarantineCmd.Add(quarantineToYearOpt);
+
+quarantineCmd.SetAction(result =>
+{
+    new Quarantiner(
+        result.GetValue(quarantineSourceArg)!,
+        result.GetValue(quarantineDirArg)!,
+        result.GetValue(quarantineDryRunOpt),
+        result.GetValue(quarantineFromYearOpt),
+        result.GetValue(quarantineToYearOpt)
+    ).Run();
+});
+
+rootCmd.Add(quarantineCmd);
+
 // ── dispatch ──────────────────────────────────────────────────────────────────
 
 var parseResult = CommandLineParser.Parse(rootCmd, args);

@@ -7,6 +7,10 @@ public class Syncer(
 {
     private readonly string[] _formatSegments = format.Split('/');
 
+    private enum FileAction { Sync, AlreadyAtDest, Junk }
+
+    private record FileDecision(FileInfo File, FileAction Action, string RelPath);
+
     public void Run()
     {
         if (!source.Exists)
@@ -18,9 +22,7 @@ public class Syncer(
         if (dryRun)
             Console.WriteLine("DRY RUN — no files will be moved\n");
 
-        var files = source.EnumerateFiles("*", SearchOption.AllDirectories)
-            .OrderBy(f => f.Name)
-            .ToList();
+        var files = source.EnumerateFiles("*", SearchOption.AllDirectories).ToList();
 
         if (files.Count == 0)
         {
@@ -28,47 +30,65 @@ public class Syncer(
             return;
         }
 
-        Console.WriteLine($"Found {files.Count} file(s) in {source.FullName}\n");
+        Console.WriteLine($"Found {files.Count} file(s) in {source.FullName}");
+        Console.WriteLine($"Classifying with {Environment.ProcessorCount} parallel threads...\n");
 
+        // Parallel classification phase (date extraction is the bottleneck)
+        var decisions = files
+            .AsParallel()
+            .WithDegreeOfParallelism(Environment.ProcessorCount)
+            .Select(file =>
+            {
+                var dr = DateExtractor.TryExtractDate(file);
+                var relPath = Path.Combine([.. _formatSegments.Select(s => dr.Date.ToString(s))]);
+                var destFile = new FileInfo(Path.Combine(output.FullName, relPath, file.Name));
+
+                var action = destFile.Exists        ? FileAction.AlreadyAtDest
+                           : JunkClassifier.IsJunk(file, dr.Source) ? FileAction.Junk
+                           : FileAction.Sync;
+
+                return new FileDecision(file, action, relPath);
+            })
+            .OrderBy(d => d.File.Name)
+            .ToList();
+
+        // Sequential act phase
         var junk = new List<FileInfo>();
         var confirmedAtDest = new List<FileInfo>();
         int synced = 0, alreadySynced = 0, errors = 0;
 
-        foreach (var file in files)
+        foreach (var decision in decisions)
         {
             try
             {
-                var dateResult = DateExtractor.TryExtractDate(file);
-                var relPath = Path.Combine([.. _formatSegments.Select(s => dateResult.Date.ToString(s))]);
-                var destDir = new DirectoryInfo(Path.Combine(output.FullName, relPath));
-                var destFile = new FileInfo(Path.Combine(destDir.FullName, file.Name));
-
-                if (destFile.Exists)
+                switch (decision.Action)
                 {
-                    confirmedAtDest.Add(file);
-                    alreadySynced++;
-                    continue;
-                }
+                    case FileAction.AlreadyAtDest:
+                        confirmedAtDest.Add(decision.File);
+                        alreadySynced++;
+                        break;
 
-                if (JunkClassifier.IsJunk(file, dateResult.Source))
-                {
-                    junk.Add(file);
-                    continue;
-                }
+                    case FileAction.Junk:
+                        junk.Add(decision.File);
+                        break;
 
-                Console.WriteLine($"  SYNC  {file.Name}  →  {relPath}");
-
-                if (!dryRun)
-                {
-                    destDir.Create();
-                    file.CopyTo(destFile.FullName);
-                    confirmedAtDest.Add(file);
+                    case FileAction.Sync:
+                        Console.WriteLine($"  SYNC  {decision.File.Name}  →  {decision.RelPath}");
+                        if (!dryRun)
+                        {
+                            var destDir = new DirectoryInfo(Path.Combine(output.FullName, decision.RelPath));
+                            var destFile = new FileInfo(Path.Combine(destDir.FullName, decision.File.Name));
+                            destDir.Create();
+                            decision.File.CopyTo(destFile.FullName);
+                            confirmedAtDest.Add(decision.File);
+                        }
+                        synced++;
+                        break;
                 }
-                synced++;
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"  ERROR  {file.Name}  —  {ex.Message}");
+                Console.Error.WriteLine($"  ERROR  {decision.File.Name}  —  {ex.Message}");
                 errors++;
             }
         }
