@@ -1,9 +1,12 @@
 # Photo Organizer Workflow
 
-A .NET CLI tool with two commands:
+A .NET CLI tool with three commands:
 
 - **organize** — move or copy video files into a date-based folder structure
-- **sync** — scan all files in a source folder, copy real media to the organized destination, list suspected junk separately, and optionally delete it
+- **sync** — scan all files in a source folder, copy real media to the organized destination, list suspected junk separately, and optionally delete source files confirmed at destination
+- **quarantine** — scan an already-organized destination folder, move suspected junk to a separate folder for inspection
+
+Classification and date extraction run in parallel across all CPU cores.
 
 ## Prerequisites
 
@@ -42,8 +45,6 @@ PhotoOrganizerWorkflow <source> <output> [options]
 | `-c, --copy` | false | Copy instead of move |
 | `-n, --dry-run` | false | Preview without modifying files |
 
-**Examples:**
-
 ```bash
 # Organize phone backup videos (year/month/day structure)
 PhotoOrganizerWorkflow "D:\PhoneBackup" "E:\Videos"
@@ -59,7 +60,7 @@ PhotoOrganizerWorkflow "D:\PhoneBackup" "E:\Videos" --copy -e .mp4 .mov --format
 
 ### sync
 
-Scans **all** files in the source directory, checks which are already present at the destination, copies missing real media (photos and videos), and lists suspected junk separately. After syncing, prompts whether to delete the junk files from source.
+Scans **all** files in the source directory, checks which are already present at the destination, copies missing real media (photos and videos), and lists suspected junk separately. Optionally deletes source files once confirmed at destination.
 
 ```
 PhotoOrganizerWorkflow sync <source> <output> [options]
@@ -70,31 +71,67 @@ PhotoOrganizerWorkflow sync <source> <output> [options]
 | `source` | — | Source directory to sync from |
 | `output` | — | Organized destination root |
 | `-f, --format` | `yyyy/yyyy-MM/yyyy-MM-dd` | Folder structure |
+| `-d, --delete-synced` | false | After syncing, prompt to delete source files confirmed at destination |
 | `-n, --dry-run` | false | Preview without modifying files |
-
-**Examples:**
 
 ```bash
 # Sync all media from phone backup
 PhotoOrganizerWorkflow sync "D:\PhoneBackup" "E:\OrganizedPhotos"
 
+# Sync then clean up source (prompts before deleting)
+PhotoOrganizerWorkflow sync "D:\PhoneBackup" "E:\OrganizedPhotos" --delete-synced
+
 # Preview first
 PhotoOrganizerWorkflow sync "D:\PhoneBackup" "E:\OrganizedPhotos" --dry-run
 ```
 
-**Junk detection** — a file is flagged as suspected junk if any of the following apply:
+---
 
-- Filename matches a WhatsApp pattern (`IMG-YYYYMMDD-WA####`, `VID-YYYYMMDD-WA####`)
-- Filename starts with `Screenshot`
-- File is inside a `WhatsApp` directory
-- Extension is not a known media type (`.jpg .jpeg .png .heic .heif .dng .raw .bmp .webp .tiff .tif .gif .mp4 .mov .avi .mkv .3gp .m4v .wmv`)
-- No date found in filename or embedded metadata (only filesystem date is available)
+### quarantine
 
-After listing junk, the tool prompts:
+Scans an already-organized destination folder, applies junk detection to every file, and moves suspected junk to a separate quarantine folder (preserving the subfolder structure). Always shows a full list before prompting to move.
 
 ```
-Delete these N suspected junk files from source? [y/N]
+PhotoOrganizerWorkflow quarantine <source> <quarantine-dir> [options]
 ```
+
+| Argument / Option | Default | Description |
+|---|---|---|
+| `source` | — | Organized folder to scan |
+| `quarantine-dir` | — | Folder to move suspected junk into |
+| `--from-year` | 1900 | Only scan year folders >= this value |
+| `--to-year` | 9999 | Only scan year folders <= this value |
+| `-n, --dry-run` | false | Preview without moving anything |
+
+```bash
+# Find and move junk from the last six years
+PhotoOrganizerWorkflow quarantine "E:\OrganizedPhotos" "E:\Quarantine" --from-year 2020 --to-year 2026
+
+# Preview only
+PhotoOrganizerWorkflow quarantine "E:\OrganizedPhotos" "E:\Quarantine" --from-year 2020 --to-year 2026 --dry-run
+```
+
+After moving, browse `quarantine-dir` and delete it when satisfied, or restore anything that was misclassified.
+
+---
+
+## Junk detection
+
+A file is flagged as suspected junk if **any** of the following apply (checked in order):
+
+| Rule | Examples |
+|---|---|
+| Filename matches WhatsApp pattern | `IMG-20231215-WA0001.jpg`, `VID-20231215-WA0032.mp4` |
+| Filename starts with `Screenshot` | `Screenshot_20231215_143022.jpg` |
+| File lives inside a `WhatsApp` directory | any path containing `WhatsApp` |
+| Extension is in the always-legitimate set | never junk — see below |
+| Extension is not a known media type | `.ini`, `.db`, `.json`, `.modd`, `.THM`, `.url`, … |
+| No date in filename or embedded metadata | only filesystem creation time available |
+
+**Always-legitimate extensions** (never quarantined, even without embedded dates):
+`.cr2 .cr3 .arw .nef .nrw .orf .raf .rw2 .pef .srw .x3f .erf .dng .raw .mts .m2ts .xmp`
+
+This covers all common camera RAW formats, AVCHD camcorder video, and Lightroom/Photoshop XMP edit sidecars.
 
 ---
 
@@ -106,7 +143,7 @@ Dates are resolved in priority order for every file:
 2. **Embedded metadata** — EXIF `DateTimeOriginal` (photos) or QuickTime `Created` tag (videos)
 3. **File creation time** — filesystem fallback when no other date is available
 
-Files that reach step 3 with no real capture metadata are treated as suspected junk by the `sync` command.
+Files that reach step 3 are treated as suspected junk by `sync` and `quarantine` (unless they have an always-legitimate extension).
 
 ---
 
