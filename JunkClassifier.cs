@@ -29,7 +29,8 @@ public static class JunkClassifier
     {
         ".cr2", ".cr3", ".arw", ".nef", ".nrw", ".orf", ".raf",
         ".rw2", ".pef", ".srw", ".x3f", ".erf", ".dng", ".raw",
-        ".mts", ".m2ts"
+        ".mts", ".m2ts",
+        ".xmp"  // Lightroom/Photoshop edit sidecars — must stay next to their RAW files
     };
 
     public static bool IsJunk(FileInfo file, DateSource dateSource)
@@ -46,14 +47,14 @@ public static class JunkClassifier
         if (file.DirectoryName?.Contains("WhatsApp", StringComparison.OrdinalIgnoreCase) == true)
             return true;
 
+        // Explicitly legitimate extensions are never junk regardless of date source.
+        // Checked before the media-extension gate so e.g. .xmp sidecars pass through.
+        if (AlwaysLegitimateExtensions.Contains(file.Extension))
+            return false;
+
         // Non-media extensions are junk (metadata files, thumbnails, etc.)
         if (!KnownMediaExtensions.Contains(file.Extension))
             return true;
-
-        // Camera RAW and specialised camcorder formats are always legitimate,
-        // even when MetadataExtractor can't extract a date from them.
-        if (AlwaysLegitimateExtensions.Contains(file.Extension))
-            return false;
 
         // For everything else, only a filesystem date means no real capture metadata.
         if (dateSource == DateSource.FileSystem)
