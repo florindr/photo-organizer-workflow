@@ -2,7 +2,8 @@ public class Syncer(
     DirectoryInfo source,
     DirectoryInfo output,
     string format,
-    bool dryRun)
+    bool dryRun,
+    bool deleteSynced)
 {
     private readonly string[] _formatSegments = format.Split('/');
 
@@ -30,6 +31,7 @@ public class Syncer(
         Console.WriteLine($"Found {files.Count} file(s) in {source.FullName}\n");
 
         var junk = new List<FileInfo>();
+        var confirmedAtDest = new List<FileInfo>();
         int synced = 0, alreadySynced = 0, errors = 0;
 
         foreach (var file in files)
@@ -43,6 +45,7 @@ public class Syncer(
 
                 if (destFile.Exists)
                 {
+                    confirmedAtDest.Add(file);
                     alreadySynced++;
                     continue;
                 }
@@ -59,6 +62,7 @@ public class Syncer(
                 {
                     destDir.Create();
                     file.CopyTo(destFile.FullName);
+                    confirmedAtDest.Add(file);
                 }
                 synced++;
             }
@@ -79,14 +83,19 @@ public class Syncer(
                 Console.WriteLine($"  {f.FullName}");
 
             if (!dryRun)
-                PromptDelete(junk);
+                PromptDelete(junk, "suspected junk");
+        }
+
+        if (deleteSynced && confirmedAtDest.Count > 0 && !dryRun)
+        {
+            Console.WriteLine();
+            PromptDelete(confirmedAtDest, "source files confirmed at destination");
         }
     }
 
-    private static void PromptDelete(List<FileInfo> files)
+    private static void PromptDelete(List<FileInfo> files, string label)
     {
-        Console.WriteLine();
-        Console.Write($"Delete these {files.Count} suspected junk files from source? [y/N] ");
+        Console.Write($"Delete {files.Count} {label} from source? [y/N] ");
         var response = Console.ReadLine()?.Trim();
         if (!string.Equals(response, "y", StringComparison.OrdinalIgnoreCase))
         {

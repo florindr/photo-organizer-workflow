@@ -73,12 +73,17 @@ var syncDryRunOpt = new Option<bool>("--dry-run", "-n")
 {
     Description = "Preview what would be synced without modifying files"
 };
+var syncDeleteSyncedOpt = new Option<bool>("--delete-synced", "-d")
+{
+    Description = "After syncing, prompt to delete source files confirmed at destination"
+};
 
 var syncCmd = new Command("sync", "Sync all media from source into the organized destination; lists suspected junk separately");
 syncCmd.Add(syncSourceArg);
 syncCmd.Add(syncOutputArg);
 syncCmd.Add(syncFormatOpt);
 syncCmd.Add(syncDryRunOpt);
+syncCmd.Add(syncDeleteSyncedOpt);
 
 syncCmd.SetAction(result =>
 {
@@ -86,7 +91,8 @@ syncCmd.SetAction(result =>
         result.GetValue(syncSourceArg)!,
         result.GetValue(syncOutputArg)!,
         result.GetValue(syncFormatOpt)!,
-        result.GetValue(syncDryRunOpt)
+        result.GetValue(syncDryRunOpt),
+        result.GetValue(syncDeleteSyncedOpt)
     ).Run();
 });
 
