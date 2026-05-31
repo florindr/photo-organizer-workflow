@@ -39,15 +39,8 @@ public class FileOrganizer(
         {
             try
             {
-                var date = DateExtractor.TryExtractDate(file);
-                if (date is null)
-                {
-                    Console.WriteLine($"  SKIP  (no date)  {file.Name}");
-                    skipped++;
-                    continue;
-                }
-
-                var relPath = Path.Combine(_formatSegments.Select(s => date.Value.ToString(s)).ToArray());
+                var result = DateExtractor.TryExtractDate(file);
+                var relPath = Path.Combine([.. _formatSegments.Select(s => result.Date.ToString(s))]);
                 var destDir = new DirectoryInfo(Path.Combine(output.FullName, relPath));
                 var destFile = new FileInfo(Path.Combine(destDir.FullName, file.Name));
 

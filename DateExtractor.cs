@@ -3,6 +3,10 @@ using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
 using MetadataExtractor.Formats.QuickTime;
 
+public enum DateSource { Filename, Metadata, FileSystem }
+
+public record DateResult(DateTime Date, DateSource Source);
+
 public static class DateExtractor
 {
     // Matches Samsung/Android filenames: 20231215_143022, VID_20231215_143022, IMG_20231215_143022, PXL_20231215_143022
@@ -10,7 +14,7 @@ public static class DateExtractor
         @"(?:^|(?:IMG|VID|PANO|PXL)_?)(\d{4})(\d{2})(\d{2})[_\-](\d{2})(\d{2})(\d{2})",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public static DateTime? TryExtractDate(FileInfo file)
+    public static DateResult TryExtractDate(FileInfo file)
     {
         // 1. Filename (most reliable for Samsung/Android devices)
         var match = FilenamePattern.Match(Path.GetFileNameWithoutExtension(file.Name));
@@ -22,7 +26,7 @@ public static class DateExtractor
             int.TryParse(match.Groups[5].Value, out int mi) &&
             int.TryParse(match.Groups[6].Value, out int s))
         {
-            try { return new DateTime(y, mo, d, h, mi, s); } catch { }
+            try { return new DateResult(new DateTime(y, mo, d, h, mi, s), DateSource.Filename); } catch { }
         }
 
         // 2. Embedded metadata
@@ -33,16 +37,16 @@ public static class DateExtractor
             // EXIF (photos)
             var exif = dirs.OfType<ExifSubIfdDirectory>().FirstOrDefault();
             if (exif?.TryGetDateTime(ExifDirectoryBase.TagDateTimeOriginal, out var exifDate) == true)
-                return exifDate;
+                return new DateResult(exifDate, DateSource.Metadata);
 
             // QuickTime / MP4 movie header (videos)
             var qt = dirs.OfType<QuickTimeMovieHeaderDirectory>().FirstOrDefault();
             if (qt?.TryGetDateTime(QuickTimeMovieHeaderDirectory.TagCreated, out var qtDate) == true)
-                return qtDate;
+                return new DateResult(qtDate, DateSource.Metadata);
         }
         catch { }
 
-        // 3. File system date as last resort
-        return file.LastWriteTime;
+        // 3. File creation time as last resort
+        return new DateResult(file.CreationTime, DateSource.FileSystem);
     }
 }

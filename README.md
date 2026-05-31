@@ -1,6 +1,9 @@
 # Photo Organizer Workflow
 
-A .NET CLI tool that organizes media files into a date-based folder structure. Dates are extracted from filenames first (Samsung/Android naming conventions), then from embedded EXIF/QuickTime metadata, and finally from filesystem timestamps as a fallback.
+A .NET CLI tool with two commands:
+
+- **organize** — move or copy video files into a date-based folder structure
+- **sync** — scan all files in a source folder, copy real media to the organized destination, list suspected junk separately, and optionally delete it
 
 ## Prerequisites
 
@@ -14,79 +17,103 @@ cd photo-organizer-workflow
 dotnet build --configuration Release
 ```
 
-Or run a self-contained publish to get a single executable:
+Or publish as a self-contained single executable:
 
 ```bash
 dotnet publish --configuration Release --self-contained
 ```
 
-## Usage
+## Commands
+
+### organize (default)
+
+Moves or copies media files into a date-based folder structure. Processes only the specified extensions (videos by default).
 
 ```
 PhotoOrganizerWorkflow <source> <output> [options]
 ```
 
-**Arguments:**
+| Argument / Option | Default | Description |
+|---|---|---|
+| `source` | — | Source directory |
+| `output` | — | Destination root directory |
+| `-f, --format` | `yyyy/yyyy-MM/yyyy-MM-dd` | Folder structure using C# DateTime tokens |
+| `-e, --extensions` | `.mp4 .mov .avi .mkv .3gp` | Extensions to process (case-insensitive, multiple allowed) |
+| `-c, --copy` | false | Copy instead of move |
+| `-n, --dry-run` | false | Preview without modifying files |
 
-| Argument | Description |
-|----------|-------------|
-| `source` | Source directory containing media files |
-| `output` | Destination root directory |
-
-**Options:**
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `-f, --format <format>` | `yyyy/yyyy-MM/yyyy-MM-dd` | Folder structure using C# DateTime format tokens |
-| `-e, --extensions <ext...>` | `.mp4 .mov .avi .mkv .3gp` | File extensions to process (case-insensitive) |
-| `-c, --copy` | false | Copy files instead of moving them |
-| `-n, --dry-run` | false | Preview changes without modifying files |
-
-## Examples
-
-Organize videos from a phone backup into a year/month/day structure:
+**Examples:**
 
 ```bash
+# Organize phone backup videos (year/month/day structure)
 PhotoOrganizerWorkflow "D:\PhoneBackup" "E:\Videos"
-```
 
-Preview what would happen without moving anything:
-
-```bash
+# Preview without touching files
 PhotoOrganizerWorkflow "D:\PhoneBackup" "E:\Videos" --dry-run
+
+# Copy only .mp4 and .mov, flat year/month structure
+PhotoOrganizerWorkflow "D:\PhoneBackup" "E:\Videos" --copy -e .mp4 .mov --format "yyyy/yyyy-MM"
 ```
 
-Copy (rather than move) only `.mp4` and `.mov` files:
+---
+
+### sync
+
+Scans **all** files in the source directory, checks which are already present at the destination, copies missing real media (photos and videos), and lists suspected junk separately. After syncing, prompts whether to delete the junk files from source.
+
+```
+PhotoOrganizerWorkflow sync <source> <output> [options]
+```
+
+| Argument / Option | Default | Description |
+|---|---|---|
+| `source` | — | Source directory to sync from |
+| `output` | — | Organized destination root |
+| `-f, --format` | `yyyy/yyyy-MM/yyyy-MM-dd` | Folder structure |
+| `-n, --dry-run` | false | Preview without modifying files |
+
+**Examples:**
 
 ```bash
-PhotoOrganizerWorkflow "D:\PhoneBackup" "E:\Videos" --copy --extensions .mp4 .mov
+# Sync all media from phone backup
+PhotoOrganizerWorkflow sync "D:\PhoneBackup" "E:\OrganizedPhotos"
+
+# Preview first
+PhotoOrganizerWorkflow sync "D:\PhoneBackup" "E:\OrganizedPhotos" --dry-run
 ```
 
-Use a flat year/month structure instead of the default year/month/day:
+**Junk detection** — a file is flagged as suspected junk if any of the following apply:
+
+- Filename matches a WhatsApp pattern (`IMG-YYYYMMDD-WA####`, `VID-YYYYMMDD-WA####`)
+- Filename starts with `Screenshot`
+- File is inside a `WhatsApp` directory
+- Extension is not a known media type (`.jpg .jpeg .png .heic .heif .dng .raw .bmp .webp .tiff .tif .gif .mp4 .mov .avi .mkv .3gp .m4v .wmv`)
+- No date found in filename or embedded metadata (only filesystem date is available)
+
+After listing junk, the tool prompts:
+
+```
+Delete these N suspected junk files from source? [y/N]
+```
+
+---
+
+## Date extraction
+
+Dates are resolved in priority order for every file:
+
+1. **Filename** — Samsung/Android patterns: `20231215_143022`, `IMG_20231215_143022`, `VID_`, `PANO_`, `PXL_`
+2. **Embedded metadata** — EXIF `DateTimeOriginal` (photos) or QuickTime `Created` tag (videos)
+3. **File creation time** — filesystem fallback when no other date is available
+
+Files that reach step 3 with no real capture metadata are treated as suspected junk by the `sync` command.
+
+---
+
+## Running tests
 
 ```bash
-PhotoOrganizerWorkflow "D:\PhoneBackup" "E:\Videos" --format "yyyy/yyyy-MM"
+dotnet test
 ```
 
-## How dates are extracted
-
-1. **Filename** — matches patterns like `20260531_143022`, `VID_20260531_143022`, `IMG_20260531_143022`, `PXL_20260531_143022`
-2. **Embedded metadata** — EXIF `DateTimeOriginal` for photos; QuickTime `Created` tag for videos
-3. **Filesystem** — falls back to the file's last-write time
-
-Files with no extractable date are skipped.
-
-## Output
-
-Each processed file is logged with its action and destination:
-
-```
-MOVE  2026/2026-05/2026-05-31\VID_20260531_143022.mp4
-SKIP  2026/2026-05/2026-05-31\VID_20260531_150000.mp4  (already exists)
-
-Done: 142 moved, 3 skipped, 0 errors
-```
-
-## License
-
-MIT
+The test suite (xUnit, 33 tests) covers filename pattern matching, filesystem fallback behaviour, creation-time usage, and junk classification rules.
